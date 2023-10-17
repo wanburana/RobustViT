@@ -141,6 +141,7 @@ def main():
     os.mkdir(args.experiment_folder)
     os.mkdir(f'{args.experiment_folder}/train_samples')
     os.mkdir(f'{args.experiment_folder}/val_samples')
+    os.envirion['experiment_folder'] = args.experiment_folder # export experiment_folder to terminal to save log
 
     with open(f'{args.experiment_folder}/commandline_args.txt', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
