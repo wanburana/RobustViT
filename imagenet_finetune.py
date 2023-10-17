@@ -4,6 +4,7 @@ import random
 import shutil
 import time
 import warnings
+import sys
 
 import torch
 import torch.nn as nn
@@ -141,8 +142,10 @@ def main():
     os.mkdir(args.experiment_folder)
     os.mkdir(f'{args.experiment_folder}/train_samples')
     os.mkdir(f'{args.experiment_folder}/val_samples')
-    os.envirion['experiment_folder'] = args.experiment_folder # export experiment_folder to terminal to save log
-
+    
+    output_log_file = open(f'{args.experiment_folder}/output_log.txt', 'a')
+    sys.stdout = output_log_file
+    
     with open(f'{args.experiment_folder}/commandline_args.txt', 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
@@ -167,6 +170,7 @@ def main():
         # Simply call main_worker function
         main_worker(args.gpu, ngpus_per_node, args)
 
+    sys.stdout.close()
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_loss
