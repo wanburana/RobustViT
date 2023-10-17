@@ -25,12 +25,12 @@ normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5],
                                  std=[0.5, 0.5, 0.5])
 
 TRANSFORM_TRAIN = transforms.Compose([
-    transforms.RandomResizedCrop(224),
+    transforms.RandomResizedCrop(224, antialias=True),
     transforms.RandomHorizontalFlip(),
     ])
 
 TRANSFORM_EVAL = transforms.Compose([
-    transforms.Resize(256),
+    transforms.Resize(256, antialias=True),
     transforms.CenterCrop(224),
 ])
 
@@ -92,13 +92,15 @@ class SegmentationDataset(ImageFolder):
         image = image.convert('RGB')
 
         seg_map = np.array(seg_map)
-        seg_map = seg_map[:, :, 1] * 256 + seg_map[:, :, 0]
-
-        assert len([cand for cand in np.unique(seg_map) if cand != 0 and cand != 1000]) == 1
-
-        # Convert to binary seg maps
-        seg_map[seg_map == 1000] = 0
-        seg_map[seg_map != 0] = 1
+        if len(seg_map.shape) == 3: # NEW
+            seg_map = seg_map[:, :, 1] * 256 + seg_map[:, :, 0]
+    
+            assert len([cand for cand in np.unique(seg_map) if cand != 0 and cand != 1000]) == 1
+    
+            # Convert to binary seg maps
+            seg_map[seg_map == 1000] = 0
+            seg_map[seg_map != 0] = 1
+            
 
         seg_map = torch.from_numpy(seg_map.astype(np.float32))
 
@@ -111,7 +113,7 @@ class SegmentationDataset(ImageFolder):
 
         elif self._partition == TRAIN_PARTITION:
             # Resize
-            resize = transforms.Resize(size=(256, 256))
+            resize = transforms.Resize(size=(256, 256), antialias=True)
             image = resize(image)
             seg_map = resize(seg_map)
 
