@@ -102,41 +102,10 @@ def main():
     if args.checkpoint:
         parent_dir = os.path.dirname(args.checkpoint)
         dataset_name = args.data.split('/')[-1]
-        with open(f'{parent_dir}/{dataset_name}_output_log.txt', 'a') as output_log_file:
-            sys.stdout = output_log_file
-
-            if args.seed is not None:
-                random.seed(args.seed)
-                torch.manual_seed(args.seed)
-                cudnn.deterministic = True
-                warnings.warn('You have chosen to seed training. '
-                            'This will turn on the CUDNN deterministic setting, '
-                            'which can slow down your training considerably! '
-                            'You may see unexpected behavior when restarting '
-                            'from checkpoints.')
-
-            if args.gpu is not None:
-                warnings.warn('You have chosen a specific GPU. This will completely '
-                            'disable data parallelism.')
-
-            if args.dist_url == "env://" and args.world_size == -1:
-                args.world_size = int(os.environ["WORLD_SIZE"])
-
-            args.distributed = args.world_size > 1 or args.multiprocessing_distributed
-
-            ngpus_per_node = torch.cuda.device_count()
-            if args.multiprocessing_distributed:
-                # Since we have ngpus_per_node processes per node, the total world_size
-                # needs to be adjusted accordingly
-                args.world_size = ngpus_per_node * args.world_size
-                # Use torch.multiprocessing.spawn to launch distributed processes: the
-                # main_worker process function
-                mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
-            else:
-                # Simply call main_worker function
-                main_worker(args.gpu, ngpus_per_node, args)
-
-    else:
+        output_log_file = open(f'{parent_dir}/{dataset_name}_output_log.txt', 'a')
+        sys.stdout = output_log_file
+    
+    try:
         if args.seed is not None:
             random.seed(args.seed)
             torch.manual_seed(args.seed)
@@ -167,7 +136,10 @@ def main():
         else:
             # Simply call main_worker function
             main_worker(args.gpu, ngpus_per_node, args)
-
+    
+    finally:
+        if args.checkpoint:
+            sys.stdout.close()
 
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
@@ -340,7 +312,7 @@ class ProgressMeter(object):
     def display(self, batch):
         entries = [self.prefix + self.batch_fmtstr.format(batch)]
         entries += [str(meter) for meter in self.meters]
-        print('\t'.join(entries))
+        print('\t'.join(entries), flush=True)
 
     def _get_batch_fmtstr(self, num_batches):
         num_digits = len(str(num_batches // 1))
