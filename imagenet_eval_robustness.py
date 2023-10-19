@@ -141,6 +141,8 @@ def main():
             # Simply call main_worker function
             main_worker(args.gpu, ngpus_per_node, args)
     
+    except:
+        os.remove(output_filepath)
     finally:
         if args.checkpoint:
             sys.stdout.close()
