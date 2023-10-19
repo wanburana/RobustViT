@@ -102,7 +102,11 @@ def main():
     if args.checkpoint:
         parent_dir = os.path.dirname(args.checkpoint)
         dataset_name = args.data.split('/')[-1]
-        output_log_file = open(f'{parent_dir}/{dataset_name}_output_log.txt', 'a')
+        output_filepath = f'{parent_dir}/{dataset_name}_output_log.txt'
+        if os.path.exists(output_filepath):
+            print(f"{output_filepath} already existed, it will be skipped (delete the file to unskip)")
+            return 
+        output_log_file = open(output_filepath, 'a')
         sys.stdout = output_log_file
     
     try:
