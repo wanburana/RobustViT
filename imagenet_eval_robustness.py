@@ -107,6 +107,8 @@ def main():
             print(f"{output_filepath} already existed, it will be skipped (delete the file to unskip)")
             return 
         output_log_file = open(output_filepath, 'a')
+        
+        orig_stdout = sys.stdout
         sys.stdout = output_log_file
     
     try:
@@ -141,8 +143,11 @@ def main():
             # Simply call main_worker function
             main_worker(args.gpu, ngpus_per_node, args)
     
-    except:
+    except Exception as e:
+        sys.stdout = orig_stdout
+        print(e)
         os.remove(output_filepath)
+        
     finally:
         if args.checkpoint:
             sys.stdout.close()
