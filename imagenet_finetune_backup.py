@@ -51,8 +51,6 @@ parser.add_argument('--data', metavar='DATA',
                     help='path to dataset')
 parser.add_argument('--seg_data', metavar='SEG_DATA',
                     help='path to segmentation dataset')
-parser.add_argument('--edge_data', metavar='EDGE_DATA',
-                    help='path to edge dataset')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=50, type=int, metavar='N',
@@ -108,10 +106,8 @@ parser.add_argument('--dilation', default=0, type=float,
                     help='Use dilation on the segmentation maps.')
 parser.add_argument('--lambda_background', default=2, type=float,
                     help='coefficient of loss for segmentation background.')
-parser.add_argument('--lambda_edge', default=0.3, type=float,
-                    help='coefficient of loss for segmentation edge.')
-parser.add_argument('--lambda_texture', default=0.3, type=float,
-                    help='coefficient of loss for segmentation texture.')
+parser.add_argument('--lambda_foreground', default=0.3, type=float,
+                    help='coefficient of loss for segmentation foreground.')
 parser.add_argument('--num_classes', default=500, type=int,
                     help='coefficient of loss for segmentation foreground.')
 parser.add_argument('--temperature', default=1, type=float,
@@ -127,7 +123,7 @@ def main():
     if args.experiment_folder is None:
         args.experiment_folder = f'experiment/' \
                                  f'lr_{args.lr}_seg_{args.lambda_seg}_acc_{args.lambda_acc}' \
-                                 f'_bckg_{args.lambda_background}_edge_{args.lambda_edge}_texture_{args.lambda_texture}'
+                                 f'_bckg_{args.lambda_background}_fgd_{args.lambda_foreground}'
         if args.temperature != 1:
             args.experiment_folder = args.experiment_folder + f'_tempera_{args.temperature}'
         if args.batch_size != 8:
@@ -254,7 +250,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     cudnn.benchmark = True
 
-    train_dataset = SegmentationDataset(args.seg_data, args.edge_data, args.data, partition=TRAIN_PARTITION, train_classes=args.num_classes,
+    train_dataset = SegmentationDataset(args.seg_data, args.data, partition=TRAIN_PARTITION, train_classes=args.num_classes,
                                         num_samples=args.num_samples, seed=args.class_seed)
 
     if args.distributed:
@@ -266,7 +262,7 @@ def main_worker(gpu, ngpus_per_node, args):
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
-    val_dataset = SegmentationDataset(args.seg_data, args.edge_data, args.data, partition=VAL_PARTITION, train_classes=args.num_classes,
+    val_dataset = SegmentationDataset(args.seg_data, args.data, partition=VAL_PARTITION, train_classes=args.num_classes,
                                       num_samples=1, seed=args.class_seed)
 
     val_loader = torch.utils.data.DataLoader(
@@ -325,36 +321,23 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     # switch to train mode
     model.train()
 
-    for i, (seg_map, edge_map, image_ten, class_name) in enumerate(train_loader):
+    for i, (seg_map, image_ten, class_name) in enumerate(train_loader):
         if torch.cuda.is_available():
             image_ten = image_ten.cuda(args.gpu, non_blocking=True)
             seg_map = seg_map.cuda(args.gpu, non_blocking=True)
-            edge_map = edge_map.cuda(args.gpu, non_blocking=True)
             class_name = class_name.cuda(args.gpu, non_blocking=True)
 
         # segmentation loss
         relevance = generate_relevance(model, image_ten, index=class_name)
 
-        # TODO:
-        # get edge object only
-        edge_object_map =  torch.logical_and(edge_map, seg_map).to(torch.float32)
-        # get texture
-        texture_map = seg_map - edge_object_map
-        # get background
         reverse_seg_map = seg_map.clone()
         reverse_seg_map[reverse_seg_map == 1] = -1
         reverse_seg_map[reverse_seg_map == 0] = 1
         reverse_seg_map[reverse_seg_map == -1] = 0
-        # try to make relevance close to edge object 
-        # try to make relevance close to texture 
-        # try to make relevance of background close to 0 
-        # sum all loss
         background_loss = mse_criterion(relevance * reverse_seg_map, torch.zeros_like(relevance))
-        edge_loss = mse_criterion(relevance * edge_object_map, edge_object_map)
-        texture_loss = mse_criterion(relevance * texture_map, texture_map)
+        foreground_loss = mse_criterion(relevance * seg_map, seg_map)
         segmentation_loss = args.lambda_background * background_loss
-        segmentation_loss += args.lambda_edge * edge_loss
-        segmentation_loss += args.lambda_texture * texture_loss
+        segmentation_loss += args.lambda_foreground * foreground_loss
 
         # classification loss
         output = model(image_ten)
@@ -435,46 +418,25 @@ def validate(val_loader, model, criterion, epoch, args):
     orig_model.eval()
 
     with torch.no_grad():
-        for i, (seg_map, edge_map, image_ten, class_name) in enumerate(val_loader):
+        for i, (seg_map, image_ten, class_name) in enumerate(val_loader):
             if args.gpu is not None:
                 image_ten = image_ten.cuda(args.gpu, non_blocking=True)
             if torch.cuda.is_available():
                 seg_map = seg_map.cuda(args.gpu, non_blocking=True)
-                edge_map = edge_map.cuda(args.gpu, non_blocking=True)
                 class_name = class_name.cuda(args.gpu, non_blocking=True)
 
                 # segmentation loss
                 with torch.enable_grad():
                     relevance = generate_relevance(model, image_ten, index=class_name)
 
-                # get edge object only
-                edge_object_map =  torch.logical_and(edge_map, seg_map).to(torch.float32)
-                # get texture
-                texture_map = seg_map - edge_object_map
-                # get background
                 reverse_seg_map = seg_map.clone()
                 reverse_seg_map[reverse_seg_map == 1] = -1
                 reverse_seg_map[reverse_seg_map == 0] = 1
                 reverse_seg_map[reverse_seg_map == -1] = 0
-                # try to make relevance close to edge object 
-                # try to make relevance close to texture 
-                # try to make relevance of background close to 0 
-                # sum all loss
                 background_loss = mse_criterion(relevance * reverse_seg_map, torch.zeros_like(relevance))
-                edge_loss = mse_criterion(relevance * edge_object_map, edge_object_map)
-                texture_loss = mse_criterion(relevance * texture_map, texture_map)
+                foreground_loss = mse_criterion(relevance * seg_map, seg_map)
                 segmentation_loss = args.lambda_background * background_loss
-                segmentation_loss += args.lambda_edge * edge_loss
-                segmentation_loss += args.lambda_texture * texture_loss
-
-                # reverse_seg_map = seg_map.clone()
-                # reverse_seg_map[reverse_seg_map == 1] = -1
-                # reverse_seg_map[reverse_seg_map == 0] = 1
-                # reverse_seg_map[reverse_seg_map == -1] = 0
-                # background_loss = mse_criterion(relevance * reverse_seg_map, torch.zeros_like(relevance))
-                # foreground_loss = mse_criterion(relevance * seg_map, seg_map)
-                # segmentation_loss = args.lambda_background * background_loss
-                # segmentation_loss += args.lambda_foreground * foreground_loss
+                segmentation_loss += args.lambda_foreground * foreground_loss
 
                 # classification loss
                 with torch.no_grad():
